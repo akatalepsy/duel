@@ -1,14 +1,14 @@
-import * as readline from 'readline';
+import * as readline from 'node:readline/promises';
 import "./extensions.ts";
 import { binomial } from './extensions.ts';
-
 
 const input = readline.createInterface({
     input: process.stdin,
     output: process.stdout
 });
 
-let debug_state = false;
+let running: boolean = true;
+let debug_state: boolean = false;
 
 const command_prompt = "\n> ";
 const default_instruction = "Type `help` to see command list. Type `quit` to exit.";
@@ -24,10 +24,10 @@ class UserSkill {
     }
 }
 
-const skills: UserSkill[] = [
-    new UserSkill("dueling", 1),
-    new UserSkill("luck", 1)
-]
+const skills = {
+    "dueling": new UserSkill("dueling", 1),
+    "luck": new UserSkill("luck", 1)
+}
 
 class Command {
     name: string;
@@ -40,14 +40,14 @@ class Command {
     }
 }
 
-const commands: Command[] = [
-    new Command("help", help, "Displays this message."),
-    new Command("list", listAimPoints, "Return s a list of aim points."),
-    new Command("duel", duel, "Starts a duel."),
-    new Command("level", getLevelToUpdate, "Manually set dueling level."),
-    new Command("debug", debug, "Turns debug mode on or off."),
-    new Command("quit", process.exit, "Terminates the program.")
-]
+const commands = {
+    "help": new Command("help", help, "Displays this message."),
+    "list": new Command("list", listAimPoints, "Return s a list of aim points."),
+    "duel": new Command("duel", duel, "Starts a duel."),
+    "level": new Command("level", updateLevel, "Manually set dueling level."),
+    "debug": new Command("debug", debug, "Turns debug mode on or off."),
+    "quit": new Command("quit", quit, "Terminates the program.")
+}
 
 class AimPoint {
     name: string
@@ -58,16 +58,15 @@ class AimPoint {
     }
 }
 
-const aim_points: AimPoint[] = [
-    new AimPoint("head", .55),
-    new AimPoint("heart", .40),
-    new AimPoint("chest", .95),
-    new AimPoint("gut", .75),
-    new AimPoint("hand", .25),
-    new AimPoint("barrel", .000001),
-    new AimPoint("sky", 9999)
-]
-
+const aim_points = {
+    "head": new AimPoint("head", .55),
+    "heart": new AimPoint("heart", .40),
+    "chest": new AimPoint("chest", .95),
+    "gut": new AimPoint("gut", .75),
+    "hand": new AimPoint("hand", .25),
+    "barrel": new AimPoint("barrel", .000001),
+    "sky": new AimPoint("sky", 9999)
+}
 class MissPoint {
     name: string
     accuracy_levels: any
@@ -75,7 +74,7 @@ class MissPoint {
     constructor(name: string, accuracy_levels, luck_multiplier: number) {
         this.name = name;
         this.accuracy_levels = accuracy_levels;
-        this.luck_multiplier = luck_multiplier
+        this.luck_multiplier = luck_multiplier;
     }
 }
 
@@ -115,60 +114,17 @@ const miss_points: MissPoint[] = [
 ]
 
 
-function getLevelToUpdate() {
-    reply("Please choose level to set (`dueling` or `luck`) or type `cancel` to cancel.");
-    printLevels();
-    input.question(command_prompt, (user_input) => {
-        user_input.toLowerCase().trim();
-        if (user_input == "quit") {
-            process.exit(termination_message);
-        }
-        else if (user_input == "cancel") {
-            reply(user_cancel);
-            run();
-        }
-        else {
-            for (let key of skills) {
-                if (user_input == key.name) {
-                    const skill_to_update = key;
-                    const new_level = updateLevel(skill_to_update);
-                    if (new_level) {
-                        skill_to_update.level = new_level;
-                        reply(`Successfully set ${skill_to_update.name} level to ${new_level}.`);
-                        return;
-                    }
-                }
-                else {
-                    reply("Invalid selection. Please try again.");
-                    getLevelToUpdate();
-                }
-            }
-        }
-    });
+function reply(message) {
+    message = "\n" + message;
+    console.log(message);
 }
 
-function updateLevel(skill_to_update) {
-    let output:any = false
-    reply(`Please enter new ${skill_to_update.name} level or type \`cancel\` to cancel.\n(Level must be an integer greater than zero)`)
-    input.question(command_prompt, (user_input) => {
-        user_input.toLowerCase().trim();
-        if(user_input == "quit") {
-            process.exit(termination_message);
-        }
-        else if (user_input == "cancel") {
-            reply(user_cancel);
-            return;
-        }
-        else if (user_input.isNumeric() && Number(user_input) >= 1) {
-            output = Number(user_input);
-            return;
-        }
-        else {
-            reply("Invalid level. Please try again.");
-            updateLevel(skill_to_update);
-        }
-    });
-    return (output)
+function printLevels() {
+    let output = "";
+    for (let key in skills) {
+        output += `${skills[key].name.capitalize()} Level: ${skills[key].level}\n`;
+    }
+    reply(output.trim());
 }
 
 function calcLevelCurve(skill: UserSkill, curve_mod_1: number, curve_mod_2: number) {
@@ -177,7 +133,7 @@ function calcLevelCurve(skill: UserSkill, curve_mod_1: number, curve_mod_2: numb
 }
 
 function getIsHit(multiplier) {
-    const accuracy = calcLevelCurve(skills[0], 0.05, 0.7);
+    const accuracy = calcLevelCurve(skills["dueling"], 0.05, 0.7);
     const hit_chance = multiplier * accuracy;
     const roll = Math.random();
     const is_hit = roll < hit_chance;
@@ -185,7 +141,7 @@ function getIsHit(multiplier) {
 }
 
 function getMissPoints(user_aim) {
-    const p = calcLevelCurve(skills[0], 0.015, 0.9);
+    const p = calcLevelCurve(skills["dueling"], 0.015, 0.9);
     let possible_miss_points: any[] = [];
     while (!possible_miss_points.length) {
         const roll_accuracy_level = binomial(12, p);
@@ -202,71 +158,31 @@ function getMissPoints(user_aim) {
 function rollMiss(possible_miss_points) {
     possible_miss_points.sort((a, b) => (a.luck_multiplier > b.luck_multiplier ? -1 : 1));
     const n = possible_miss_points.length - 1;
-    const p = calcLevelCurve(skills[1], 0.015, 0.9);
+    const p = calcLevelCurve(skills["luck"], 0.015, 0.9);
     const roll = binomial(n, p);
     const miss = possible_miss_points[roll];
     return (miss);
 }
 
-function duel() {
-    reply("Please enter an aim point or type `cancel` to cancel.");
-    printLevels();
-    input.question(command_prompt, (user_aim_raw) => {
-        user_aim_raw.toLowerCase().trim();
-        if (user_aim_raw == "quit") {
-            process.exit(termination_message);
-        }
-        else if (user_aim_raw == "cancel") {
-            reply(user_cancel);
-            return;
-        }
-        else {
-            let user_aim: AimPoint | null = null;
-            for (let key of aim_points) {
-                if (user_aim_raw == key.name) {
-                    user_aim = key;
-                }
-            }
-            if (user_aim) {
-                const is_hit = getIsHit(user_aim.accuracy_multiplier);
-                if (is_hit) {
-                    reply(`hit ${user_aim.name}`);
-                    return;
-                }
-                else {
-                    const possible_miss_points = getMissPoints(user_aim);
-                    const miss = rollMiss(possible_miss_points);
-                    reply(`miss ${user_aim.name}, hit ${miss.name}`);
-                    return;
-                }
-            }
-            else {
-                reply("Invalid aim point. Please try again.");
-                duel();
-            }
-        }
-    });
-}
-
 function help() {
     let output = "Commands:\n\n\tName:\t\tDescription:\n";
-    for (let key of commands) {
-        output += `\n\t${key.name}\t\t${key.info}`;
+    for (let key in commands) {
+        output += `\n\t${commands[key].name}\t\t${commands[key].info}`;
     }
     reply(output);
 }
 
 function listAimPoints() {
     let output = "Aim Points:\n\n\tName:\t\tAccuracy Multiplier:\n";
-    for (let key of aim_points) {
-        output += `\n\t${key.name.capitalize()}\t\t${key.accuracy_multiplier}`;
+    for (let key in aim_points) {
+        output += `\n\t${aim_points[key].name.capitalize()}\t\t${aim_points[key].accuracy_multiplier}`;
     }
     reply(output);
 }
 
 function debug() {
-    debug_state != debug_state;
-    if (debug_state = true) {
+    debug_state = !debug_state;
+    if (debug_state) {
         reply("Debug Mode: [ON]");
     }
     else {
@@ -274,38 +190,103 @@ function debug() {
     }
 }
 
-function printLevels() {
-    let output = "";
-    for (let key of skills) {
-        output += `${key.name.capitalize()} Level: ${key.level}\n`;
-    }
-    reply(output.trim());
+function quit() {
+    running = false;
 }
 
-function reply(message) {
-    message = "\n" + message;
-    console.log(message);
-}
-
-function run() {
-    reply(default_instruction);
-    printLevels();
-    input.question(command_prompt, (user_input) => {
-    let command: Command | null = null;
-    for (let key of commands) {
-        if (user_input == key.name) {
-            command = key;
+async function getLevelToUpdate() {
+    while (running) {
+        reply("Please choose level to set (`dueling` or `luck`) or type `cancel` to cancel.");
+        printLevels();
+        const user_input = (await input.question(command_prompt)).toLowerCase().trim();
+        if (user_input == "quit") {
+            quit();
+        }
+        else if (user_input == "cancel") {
+            reply(user_cancel);
+            return (false);
+        }
+        else {
+            if (user_input in skills) {
+                return (skills[user_input]);
+            }
+            else {
+                reply("Invalid selection. Please try again.");
+            }
         }
     }
-    if (command) {
-        command.run();
-        run();
-    }
-    else {
-        reply("Invalid command. Please try again.");
-        run();
-    }
-    });
 }
 
-run()
+async function updateLevel() {
+    const skill_to_update = await getLevelToUpdate();
+    while (running && skill_to_update) {
+        reply(`Please enter new ${skill_to_update.name} level or type \`cancel\` to cancel.\n(Level must be an integer greater than zero)`);
+        const user_input: any = (await input.question(command_prompt)).toLowerCase().trim();
+        if(user_input == "quit") {
+            quit();
+        }
+        else if (user_input == "cancel") {
+            reply(user_cancel);
+            return (false);
+        }
+        else if (user_input.isNumeric() && Number(user_input) >= 1) {
+            const new_level = Number(user_input);
+            skill_to_update.level = new_level;
+            reply(`Successfully set ${skill_to_update.name} level to ${new_level}.`);
+            return;
+        }
+        else {
+            reply("Invalid level. Please try again.");
+        }
+    }
+}
+
+async function duel() {
+    while (running) {
+        reply("Please enter an aim point or type `cancel` to cancel.");
+        printLevels();
+        const user_aim_raw = (await input.question(command_prompt)).toLowerCase().trim();
+        if (user_aim_raw == "quit") {
+            quit();
+        }
+        else if (user_aim_raw == "cancel") {
+            reply(user_cancel);
+            return;
+        }
+        else if (user_aim_raw in aim_points) {
+            const user_aim = aim_points[user_aim_raw];
+            const is_hit = getIsHit(user_aim.accuracy_multiplier);
+            if (is_hit) {
+                reply(`hit ${user_aim.name}`);
+                return;
+            }
+            else {
+                const possible_miss_points = getMissPoints(user_aim);
+                const miss = rollMiss(possible_miss_points);
+                reply(`miss ${user_aim.name}, hit ${miss.name}`);
+                return;
+            }
+        }
+        else {
+            reply("Invalid aim point. Please try again.");
+        }
+    }
+}
+
+async function run() {
+    while (running) {
+        reply(default_instruction);
+        printLevels();
+        const user_input = (await input.question(command_prompt)).toLowerCase().trim();
+        if (user_input in commands) {
+            await commands[user_input].run();
+        }
+        else {
+            reply("Invalid command. Please try again.");
+        }
+    }
+    console.log(termination_message);
+    process.exit();
+}
+
+run();
